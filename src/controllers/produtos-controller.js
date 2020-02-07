@@ -1,157 +1,129 @@
-const mysql = require('../config/database').pool
+const Produto = require('../models/Produto')
 
-exports.getProdutos = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query(
-      'SELECT * FROM produtos',
-      (error, result, fields) => {
-        if (error) { return res.status(500).send({ error: error }) }
-        const response = {
-          quantidade: result.length,
-          produtos: result.map(prod => {
-            return {
-              id_produto: prod.id_produto,
-              nome: prod.nome,
-              preco: prod.preco,
-              imagem_produto: prod.imagem_produto,
-              request: {
-                tipo: 'GET',
-                descricao: 'Retorna os detalhes de um produto específico',
-                url: 'http://localhost:3000/produtos/' + prod.id_produto
-              }
-            }
-          })
-        }
-        return res.status(200).send(response)
-      }
-    )
-  })
-}
+const urlParser = require('../utils/urlParser')
 
-exports.postProduto = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query(
-      'INSERT INTO produtos (nome, preco, imagem_produto) VALUES (?,?,?)',
-      [
-        req.body.nome,
-        req.body.preco,
-        req.file.path
-      ],
-      (error, result, field) => {
-        conn.release()
-        if (error) { return res.status(500).send({ error: error }) }
-        const response = {
-          mensagem: 'Produto inserido com sucesso',
-          produtoCriado: {
-            id_produto: result.id_produto,
-            nome: req.body.nome,
-            preco: req.body.preco,
-            imagem_produto: req.file.path,
-            request: {
-              tipo: 'GET',
-              descricao: 'Retorna todos os produtos',
-              url: 'http://localhost:3000/produtos'
-            }
-          }
-        }
-        return res.status(201).send(response)
-      }
-    )
-  })
-}
-
-exports.getUmProduto = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query(
-      'SELECT * FROM produtos WHERE id_produto = ?',
-      [req.params.id_produto],
-      (error, result, fields) => {
-        if (error) { return res.status(500).send({ error: error }) }
-
-        if (result.length === 0) {
-          return res.status(404).send({
-            mensagem: 'Não foi encontrado produto com este ID'
-          })
-        }
-        const response = {
-          produto: {
-            id_produto: result[0].id_produto,
-            nome: result[0].nome,
-            preco: result[0].preco,
-            imagem_produto: result[0].imagem_produto,
-            request: {
-              tipo: 'GET',
-              descricao: 'Retorna todos os produtos',
-              url: 'http://localhost:3000/produtos'
-            }
-          }
-        }
-        return res.status(200).send(response)
-      }
-    )
-  })
-}
-
-exports.updateProduto = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query(
-      `UPDATE produtos
-        SET nome        = ?,
-          preco       = ?
-        WHERE id_produto  = ?`,
-      [
-        req.body.nome,
-        req.body.preco,
-        req.body.id_produto
-      ],
-      (error, result, field) => {
-        conn.release()
-        if (error) { return res.status(500).send({ error: error }) }
-        const response = {
-          mensagem: 'Produto atualizado com sucesso',
-          produtoAtualizado: {
-            id_produto: req.body.id_produto,
-            nome: req.body.nome,
-            preco: req.body.preco,
-            request: {
-              tipo: 'GET',
-              descricao: 'Retorna os detalhes de um produto específico',
-              url: 'http://localhost:3000/produtos/' + req.body.id_produto
-            }
-          }
-        }
-        return res.status(202).send(response)
-      }
-    )
-  })
-}
-
-exports.deleteProduto = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query(
-      'DELETE FROM produtos WHERE id_produto = ?', [req.body.id_produto],
-      (error, result, field) => {
-        conn.release()
-        if (error) { return res.status(500).send({ error: error }) }
-        const response = {
-          mensagem: 'Produto removido com sucesso',
+module.exports = {
+  async listarTodos (req, res) {
+    try {
+      const produtos = await Produto.findAll()
+      const response = {
+        quantidade: produtos.length,
+        produtos: produtos.map(produto => ({
+          ...produto.dataValues,
           request: {
-            tipo: 'POST',
-            descricao: 'Insere um produto',
-            url: 'http://localhost:3000/produtos',
-            body: {
-              nome: 'String',
-              preco: 'Number'
-            }
+            metodo: 'GET',
+            descricao: 'Obtêm os detalhes de um produto específico',
+            url: urlParser(`produtos/${produto.id_produto}`).href
+          }
+        }))
+      }
+
+      return res.json(response)
+    } catch (err) {
+      return res.status(500).json({ erro: 'Não foi possível encontrar todos os produtos' })
+    }
+  },
+  async listarUm (req, res) {
+    try {
+      const produto = await Produto.findByPk(req.params.id_produto)
+
+      if (!produto) {
+        return res.status(404).json({ erro: 'Este produto não existe' })
+      }
+
+      const response = {
+        produto: {
+          ...produto.dataValues,
+          request: {
+            metodo: 'GET',
+            descricao: 'Obtêm todos os produtos',
+            url: urlParser('produtos').href
           }
         }
-        return res.status(202).send(response)
       }
-    )
-  })
+
+      return res.json(response)
+    } catch (err) {
+      return res.status(500).json({ erro: 'Não foi possível encontrar o produto solicitado' })
+    }
+  },
+  async criar (req, res) {
+    try {
+      const { nome } = req.body
+
+      if (await Produto.findOne({ where: { nome } })) {
+        return res.status(409).json({ erro: 'Este produto já existe' })
+      }
+
+      const produto = await Produto.create({
+        ...req.body,
+        imagem_produto: urlParser(`uploads/${req.file.filename}`).href
+      })
+
+      const response = {
+        mensagem: 'Produto criado com sucesso',
+        produto: {
+          ...produto.dataValues,
+          request: {
+            metodo: 'GET',
+            descricao: 'Obtêm todos os produtos',
+            url: urlParser('produtos').href
+          }
+        }
+      }
+
+      return res.status(201).json(response)
+    } catch (err) {
+      console.log(err)
+      return res.status(400).json({ erro: 'Não foi possível criar um novo produto' })
+    }
+  },
+  async deletar (req, res) {
+    try {
+      const produto = await Produto.findByPk(req.params.id_produto)
+
+      if (!produto) {
+        return res.status(400).json({ erro: 'Este produto não existe' })
+      }
+
+      await produto.destroy()
+
+      return res.sendStatus(204)
+    } catch (err) {
+      return res.status(400).json({ erro: 'Não foi possível deletar o produto' })
+    }
+  },
+  async atualizar (req, res) {
+    try {
+      const produto = await Produto.findByPk(req.params.id_produto)
+
+      if (!produto) {
+        return res.status(400).json({ erro: 'Este produto não existe' })
+      }
+
+      if (req.file) {
+        produto.update({
+          imagem_produto: urlParser(`uploads/${req.file.filename}`).href
+        })
+      }
+
+      produto.update(req.body)
+
+      const response = {
+        mensagem: 'Produto atualizando com sucesso',
+        produto: {
+          ...produto.dataValues,
+          request: {
+            metodo: 'GET',
+            descricao: 'Obtêm um produto específico',
+            url: urlParser(`produtos/${produto.id_produto}`).href
+          }
+        }
+      }
+
+      return res.json(response)
+    } catch (err) {
+      return res.status(400).json({ erro: 'Não foi possível atualizar o produto' })
+    }
+  }
 }

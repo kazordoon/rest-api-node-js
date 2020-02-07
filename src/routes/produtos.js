@@ -1,20 +1,31 @@
 const express = require('express')
-const login = require('../middleware/login')
 const router = express.Router()
+const login = require('../middleware/login')
 
-const ProdutosController = require('../controllers/produtos-controller')
+const {
+  listarTodos,
+  listarUm,
+  criar,
+  atualizar,
+  deletar
+} = require('../controllers/produtos-controller')
 
 const upload = require('../config/multer')
 
-router.get('/', ProdutosController.getProdutos)
+router.get('/', listarTodos)
+router.get('/:id_produto', listarUm)
 router.post(
   '/',
-  login.obrigatorio,
-  upload.single('produto_imagem'),
-  ProdutosController.postProduto
+  login,
+  upload.single('imagem_produto'),
+  criar
 )
-router.get('/:id_produto', ProdutosController.getUmProduto)
-router.patch('/', login.obrigatorio, ProdutosController.updateProduto)
-router.delete('/', login.obrigatorio, ProdutosController.deleteProduto)
+router.patch(
+  '/:id_produto',
+  login,
+  upload.single('imagem_produto'),
+  atualizar
+)
+router.delete('/:id_produto', login, deletar)
 
 module.exports = router

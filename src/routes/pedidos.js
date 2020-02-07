@@ -1,11 +1,11 @@
 const express = require('express')
 const router = express.Router()
 
-const PedidosController = require('../controllers/pedidos-controller')
+const { listarTodos, listarUm, criar, deletar } = require('../controllers/pedidos-controller')
 
-router.get('/', PedidosController.getPedidos)
-router.post('/', PedidosController.postPedidos)
-router.get('/:id_pedido', PedidosController.getUmPedido)
-router.delete('/', PedidosController.deletePedido)
+router.get('/', listarTodos)
+router.get('/:id_pedido', listarUm)
+router.post('/', criar)
+router.delete('/:id_pedido', deletar)
 
 module.exports = router

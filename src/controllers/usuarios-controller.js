@@ -1,68 +1,66 @@
-const mysql = require('../config/database').pool
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 
-exports.cadastrarUsuario = (req, res, next) => {
-  mysql.getConnection((err, conn) => {
-    if (err) { return res.status(500).send({ err }) }
-    conn.query('SELECT * FROM usuarios WHERE email = ?', [req.body.email], (error, results) => {
-      if (error) { return res.status(500).send({ error: error }) }
-      if (results.length > 0) {
-        res.status(409).send({ mensagem: 'Usuário já cadastrado' })
-      } else {
-        bcrypt.hash(req.body.senha, 10, (errBcrypt, hash) => {
-          if (errBcrypt) { return res.status(500).send({ error: errBcrypt }) }
-          conn.query(
-            'INSERT INTO usuarios (email, senha) VALUES (?,?)',
-            [req.body.email, hash],
-            (error, results) => {
-              conn.release()
-              if (error) { return res.status(500).send({ error: error }) }
-              const response = {
-                mensagem: 'Usuário criado com sucesso',
-                usuarioCriado: {
-                  id_usuario: results.insertId,
-                  email: req.body.email
-                }
-              }
-              return res.status(201).send(response)
-            })
-        })
-      }
-    })
-  })
-}
+const Usuario = require('../models/Usuario')
 
-exports.Login = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    const query = 'SELECT * FROM usuarios WHERE email = ?'
-    conn.query(query, [req.body.email], (error, results, fields) => {
-      conn.release()
-      if (error) { return res.status(500).send({ error: error }) }
-      if (results.length < 1) {
-        return res.status(401).send({ mensagem: 'Falha na autenticação' })
+module.exports = {
+  async cadastrar (req, res) {
+    try {
+      const { email, senha } = req.body
+
+      if (await Usuario.findOne({ where: { email } })) {
+        return res.status(409).json({ erro: 'Este email já está cadastrado' })
       }
-      bcrypt.compare(req.body.senha, results[0].senha, (err, result) => {
-        if (err) {
-          return res.status(401).send({ mensagem: 'Falha na autenticação' })
+
+      const usuario = await Usuario.create({ email, senha })
+
+      const response = {
+        mensagem: 'Usuário criado com sucesso',
+        usuario: {
+          id_usuario: usuario.id_usuario,
+          email: usuario.email
         }
-        if (result) {
-          const token = jwt.sign({
-            id_usuario: results[0].id_usuario,
-            email: results[0].email
-          },
-          process.env.JWT_KEY,
-          {
-            expiresIn: '1h'
-          })
-          return res.status(200).send({
-            mensagem: 'Autenticado com sucesso',
-            token: token
-          })
-        }
-        return res.status(401).send({ mensagem: 'Falha na autenticação' })
+      }
+
+      return res.status(201).json(response)
+    } catch (err) {
+      console.log(err)
+      return res.status(400).json({ erro: 'Não foi possível cadastrar a sua conta' })
+    }
+  },
+  async login (req, res) {
+    try {
+      const { email, senha } = req.body
+
+      const usuario = await Usuario.findOne({
+        where: { email }
       })
-    })
-  })
+
+      if (!usuario) {
+        return res.status(401).json({ erro: 'Falha na autenticação' })
+      }
+
+      if (!await bcrypt.compare(senha, usuario.senha)) {
+        return res.status(401).json({ erro: 'Senha incorreta' })
+      }
+
+      const token = await jwt.sign({
+        id_usuario: usuario.id_usuario,
+        email: usuario.email
+      },
+      process.env.SECRET_KEY,
+      {
+        expiresIn: '1h'
+      })
+
+      const response = {
+        mensagem: 'Logado com sucesso',
+        token
+      }
+
+      return res.json(response)
+    } catch (err) {
+      return res.status(401).json({ erro: 'Falha na autenticação' })
+    }
+  }
 }

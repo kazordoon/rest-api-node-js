@@ -1,133 +1,109 @@
-const mysql = require('../config/database').pool
+/* eslint-disable camelcase */
+const Pedido = require('../models/Pedido')
+const Produto = require('../models/Produto')
 
-exports.getPedidos = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query(`SELECT pedidos.id_pedido,
-                        pedidos.quantidade,
-                        produtos.id_produto,
-                        produtos.nome,
-                        produtos.preco
-                    FROM pedidos
-              INNER JOIN produtos
-                      ON produtos.id_produto = pedidos.id_produto`,
-    (error, result, fields) => {
-      if (error) { return res.status(500).send({ error: error }) }
-      const response = {
-        pedidos: result.map(pedido => {
-          return {
-            id_pedido: pedido.id_pedido,
-            quantidade: pedido.quantidade,
-            produto: {
-              id_produto: pedido.id_produto,
-              nome: pedido.nome,
-              preco: pedido.preco
-            },
-            request: {
-              tipo: 'GET',
-              descricao: 'Retorna os detalhes de um pedido específico',
-              url: 'http://localhost:3000/pedidos/' + pedido.id_pedido
-            }
-          }
-        })
-      }
-      return res.status(200).send(response)
-    }
-    )
-  })
-}
+const urlParser = require('../utils/urlParser')
 
-exports.postPedidos = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query('SELECT * FROM produtos WHERE id_produto = ?',
-      [req.body.id_produto],
-      (error, result, field) => {
-        if (error) { return res.status(500).send({ error: error }) }
-        if (result.length === 0) {
-          return res.status(404).send({
-            mensagem: 'Produto não encontrado'
-          })
-        }
-        conn.query(
-          'INSERT INTO pedidos (id_produto, quantidade) VALUES (?,?)',
-          [req.body.id_produto, req.body.quantidade],
-          (error, result, field) => {
-            conn.release()
-            if (error) { return res.status(500).send({ error: error }) }
-            const response = {
-              mensagem: 'Pedido inserido com sucesso',
-              pedidoCriado: {
-                id_pedido: result.id_pedido,
-                id_produto: req.body.id_produto,
-                quantidade: req.body.quantidade,
-                request: {
-                  tipo: 'GET',
-                  descricao: 'Retorna todos os pedidos',
-                  url: 'http://localhost:3000/pedidos'
-                }
-              }
-            }
-            return res.status(201).send(response)
-          }
-        )
+module.exports = {
+  async listarTodos (req, res) {
+    try {
+      const pedidos = await Pedido.findAll({
+        include: [{ // Junta os pedidos com o produto relacionado ao id_produto na tabela de pedidos
+          model: Produto,
+          as: 'produto'
+        }]
       })
-  })
-}
 
-exports.getUmPedido = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query(
-      'SELECT * FROM pedidos WHERE id_pedido = ?',
-      [req.params.id_pedido],
-      (error, result, fields) => {
-        if (error) { return res.status(500).send({ error: error }) }
-        if (result.length === 0) {
-          return res.status(404).send({
-            mensagem: 'Não foi encontrado pedido com este ID'
-          })
-        }
-        const response = {
-          pedido: {
-            id_pedido: result[0].id_pedido,
-            id_produto: result[0].id_produto,
-            quantidade: result[0].quantidade,
-            request: {
-              tipo: 'GET',
-              descricao: 'Retorna todos os pedidos',
-              url: 'http://localhost:3000/pedidos'
-            }
-          }
-        }
-        return res.status(200).send(response)
-      }
-    )
-  })
-}
-
-exports.deletePedido = (req, res, next) => {
-  mysql.getConnection((error, conn) => {
-    if (error) { return res.status(500).send({ error: error }) }
-    conn.query(
-      'DELETE FROM pedidos WHERE id_pedido = ?', [req.body.id_pedido],
-      (error, result, field) => {
-        conn.release()
-        if (error) { return res.status(500).send({ error: error }) }
-        const response = {
-          mensagem: 'Pedido removido com sucesso',
+      const response = {
+        pedidos: pedidos.map(pedido => ({
+          id_pedido: pedido.id_pedido,
+          quantidade: pedido.quantidade,
+          produto: pedido.produto,
           request: {
-            tipo: 'POST',
-            descricao: 'Insere um pedido',
-            url: 'http://localhost:3000/pedidos',
-            body: {
-              id_produto: 'Number',
-              quantidade: 'Number'
-            }
+            metodo: 'GET',
+            descricao: 'Obtêm os detalhes de um pedido específico',
+            url: urlParser(`pedidos/${pedido.dataValues.id_pedido}`).href
+          }
+        }))
+      }
+
+      return res.json(response)
+    } catch (err) {
+      return res.status(500).json({ erro: 'Não foi possível encontrar todos os pedidos' })
+    }
+  },
+  async listarUm (req, res) {
+    try {
+      const pedido = await Pedido.findByPk(req.params.id_pedido, {
+        include: [{
+          model: Produto,
+          as: 'produto'
+        }]
+      })
+
+      if (!pedido) {
+        return res.status(404).json({ erro: 'Este pedido não existe' })
+      }
+
+      const response = {
+        pedido: {
+          id_pedido: pedido.id_pedido,
+          quantidade: pedido.quantidade,
+          produto: pedido.produto,
+          request: {
+            metodo: 'GET',
+            descricao: 'Obtêm todos os pedidos',
+            url: urlParser('pedidos').href
           }
         }
-        return res.status(202).send(response)
       }
-    )
-  })
+      return res.json(response)
+    } catch (err) {
+      return res.status(400).json({ erro: 'Não foi possível encontrar o pedido solicitado' })
+    }
+  },
+  async criar (req, res) {
+    try {
+      const { id_produto } = req.body
+
+      if (!await Produto.findByPk(id_produto)) {
+        return res.status(400).json({ erro: 'O id do produto fornecido é inválido' })
+      }
+
+      const pedido = await Pedido.create(req.body)
+      const produto = await Produto.findByPk(pedido.id_produto)
+
+      const response = {
+        quantidade: pedido.length,
+        pedido: {
+          id_pedido: pedido.id_pedido,
+          quantidade: pedido.quantidade,
+          produto,
+          request: {
+            metodo: 'GET',
+            descricao: 'Obtêm todos os pedidos',
+            url: urlParser('pedidos').href
+          }
+        }
+      }
+      return res.status(201).json(response)
+    } catch (err) {
+      return res.status(400).json({ erro: 'Não foi possível criar um novo pedido' })
+    }
+  },
+  async deletar (req, res) {
+    try {
+      const pedido = await Pedido.findByPk(req.params.id_pedido)
+
+      if (!pedido) {
+        return res.status(400).json({ erro: 'Este pedido não existe' })
+      }
+
+      await pedido.destroy()
+
+      return res.sendStatus(204)
+    } catch (err) {
+      return res.status(400).json({ erro: 'Não foi possível excluir o pedido' })
+    }
+  }
 }

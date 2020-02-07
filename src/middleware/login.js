@@ -1,23 +1,30 @@
 const jwt = require('jsonwebtoken')
 
-exports.obrigatorio = (req, res, next) => {
-  try {
-    const token = req.headers.authorization.split(' ')[1]
-    const decode = jwt.verify(token, process.env.JWT_KEY)
-    req.usuario = decode
-    next()
-  } catch (error) {
-    return res.status(401).send({ mensagem: 'Falha na autenticação' })
-  }
-}
+module.exports = (req, res, next) => {
+  const authHeader = req.headers.authorization
 
-exports.opcional = (req, res, next) => {
-  try {
-    const token = req.headers.authorization.split(' ')[1]
-    const decode = jwt.verify(token, process.env.JWT_KEY)
-    req.usuario = decode
-    next()
-  } catch (error) {
-    next()
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Nenhum token foi fornecido' })
   }
+
+  const parts = authHeader.split(' ')
+
+  if (!(parts.length === 2)) {
+    return res.status(401).json({ error: 'Erro no token' })
+  }
+
+  const [scheme, token] = parts
+
+  if (!/^Bearer$/.test(scheme)) {
+    return res.status(401).json({ error: 'Token malformatado' })
+  }
+
+  jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ error: 'Token inválido' })
+    }
+
+    req.user = decoded
+    return next()
+  })
 }
