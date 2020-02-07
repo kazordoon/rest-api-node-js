@@ -1,4 +1,4 @@
-const mysql = require('../mysql').pool;
+const mysql = require('../config/database').pool;
 
 exports.getPedidos = (req, res, next) => {
     mysql.getConnection((error, conn) => {

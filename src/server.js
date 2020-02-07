@@ -46,4 +46,8 @@ app.use((error, req, res, next) => {
     });
 });
 
-module.exports = app;
+app.set('PORT', process.env.PORT || 3333);
+
+app.listen(app.get('PORT'), () => {
+    console.log(`Servidor rodando em *:${app.get('PORT')}`);
+});
